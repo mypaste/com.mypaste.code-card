@@ -46,6 +46,14 @@ export interface SurfaceBridge {
   readonly theme: SurfaceTheme | null;
   /** Registers the one receiver for the item; it fires at most once. */
   onItem(listener: (item: SurfaceItem) => void): void;
+  /**
+   * True once the host mounted this page as a settings menu page (D-1234):
+   * it has no item, so the page types into its own empty card and the copy
+   * records the picture; `save` is not part of that channel.
+   */
+  readonly menu: boolean;
+  /** Registers the one receiver for the menu notice; at most once. */
+  onMenu(listener: () => void): void;
   /** Registers the one receiver for theme changes; fires again on each change. */
   onTheme(listener: (theme: SurfaceTheme) => void): void;
   save(dataURL: string, title: string): Promise<BridgeResult>;
@@ -55,6 +63,11 @@ export interface SurfaceBridge {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+/** The host's first message to a menu page, before the theme (D-1234). */
+function isMenuMode(data: unknown): boolean {
+  return isRecord(data) && data.v === 1 && data.type === "menu";
 }
 
 function parseItem(data: unknown): SurfaceItem | null {
@@ -125,6 +138,8 @@ function applyTheme(theme: SurfaceTheme): void {
 export function connectSurface(): SurfaceBridge {
   let item: SurfaceItem | null = null;
   let itemListener: ((item: SurfaceItem) => void) | null = null;
+  let menu = false;
+  let menuListener: (() => void) | null = null;
   let theme: SurfaceTheme | null = null;
   let themeListener: ((theme: SurfaceTheme) => void) | null = null;
   let nextRequest = 1;
@@ -139,6 +154,12 @@ export function connectSurface(): SurfaceBridge {
 
   window.addEventListener("message", (event) => {
     if (event.source !== window.parent) return;
+    if (isMenuMode(event.data)) {
+      if (menu) return;
+      menu = true;
+      menuListener?.();
+      return;
+    }
     const parsed = parseItem(event.data);
     if (parsed) {
       if (item) return;
@@ -182,6 +203,13 @@ export function connectSurface(): SurfaceBridge {
     onItem(listener) {
       itemListener = listener;
       if (item) listener(item);
+    },
+    get menu() {
+      return menu;
+    },
+    onMenu(listener) {
+      menuListener = listener;
+      if (menu) listener();
     },
     onTheme(listener) {
       themeListener = listener;

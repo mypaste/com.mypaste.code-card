@@ -387,7 +387,8 @@ function pngDataURL(): string {
 }
 
 async function saveImage(): Promise<void> {
-  if (!source || busy) return;
+  // A menu page has no save in its channel; its copy is the record (D-1234).
+  if (!source || busy || bridge.menu) return;
   busy = true;
   try {
     const result = await bridge.save(pngDataURL(), source.title);
@@ -402,7 +403,10 @@ async function copyImage(): Promise<void> {
   busy = true;
   try {
     const result = await bridge.copy(pngDataURL());
-    showStatus(result.ok ? "已复制到剪贴板" : result.message || "复制失败");
+    // A menu page's copy is also the record (D-1234); a surface's copy of an
+    // item that already exists is just the clipboard.
+    const done = bridge.menu ? "已复制卡片，并记成一条新记录" : "已复制到剪贴板";
+    showStatus(result.ok ? done : result.message || "复制失败");
   } finally {
     busy = false;
   }
@@ -640,6 +644,15 @@ function wire(): void {
     options.language = "auto";
     reflect();
     draw();
+  });
+  // A menu page has no entry (D-1234): the reader types or pastes code into
+  // the card's own editor, and the copy writes both the clipboard and a new
+  // record. The host tab already names the page, so the idle line says how to
+  // start instead of reporting a missing item.
+  bridge.onMenu(() => {
+    document.body.dataset.mode = "menu";
+    stageEmpty.textContent = "粘贴或输入代码；复制会记成一条新记录";
+    setEditing(true);
   });
   bridge.onTheme((next) => {
     hostTheme = next;
